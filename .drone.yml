@@ -1,0 +1,41 @@
+kind: pipeline
+type: docker
+name: default
+
+steps:
+  - name: build-docker-image
+    image: docker:20.10.8
+    volumes:
+      - name: docker
+        path: /var/run/docker.sock
+    environment:
+      BITCOIN_VERSION: 27.1
+    commands:
+      - docker build -t devd/btc-core:$BITCOIN_VERSION .
+      - docker tag devd/btc-core:$BITCOIN_VERSION yourdockerhubusername/btc-core:latest
+      - docker push devd/btc-core:$BITCOIN_VERSION
+      - docker push devd/btc-core:latest
+
+  - name: deploy-to-kubernetes
+    image: bitnami/kubectl:latest
+    environment:
+      KUBECONFIG: /root/.kube/config
+    commands:
+      - kubectl apply -f k8s/deployment.yaml
+      - kubectl rollout status deployment/btc-core
+
+  - name: verify-deployment
+    image: bitnami/kubectl:latest
+    environment:
+      KUBECONFIG: /root/.kube/config
+    commands:
+      - kubectl get pods
+      - kubectl get services
+      - kubectl describe pod -l app=btc-core
+      - kubectl get deployments
+      - kubectl wait --for=condition=available --timeout=600s deployment/btc-core
+
+volumes:
+  - name: docker
+    host:
+      path: /var/run/docker.sock
